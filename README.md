@@ -1,4 +1,4 @@
-# Repositorio para calcular Tabulados de la ENSU
+# Repositorio para procesar datos del SESNSP
 ![Estatus](https://img.shields.io/badge/Estatus-desarrollo-yellow)
 
 ## Introducción
