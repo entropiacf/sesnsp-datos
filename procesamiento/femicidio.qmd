@@ -1,0 +1,105 @@
+---
+title: "Víctimas de feminicidio y homicidio doloso registradas por el SESNSP"
+author: "Isaías M."
+format: html
+editor: visual
+---
+
+## Introducción
+
+Este `quarto` contiene codigo para procesar los datos de la tabla de víctimas de delitos que el Secretariado Ejecutivo del Sistema Nacional de Seguridad Pública (SESNSP) pone a disposición en su sitio.
+
+De manera particular te sirve para calcular la cantidad de mujeres víctimas de homicidio doloso o feminicidio por año y así como el promedio diario de víctimas por la suma de ambos delitos.
+
+## Carga de librerías
+
+```{r}
+# El archivo fun_aux.R contiene algunas funciones útiles para el procesamiento de datos
+
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(dplyr, tidyr, readxl,janitor,here, stringr, lubridate)
+source("fun_aux.R")
+
+```
+
+## Lectura de datos
+
+```{r}
+# Primero cargar los datos más recientes de víctimas SESNSP y
+# mostramos los primeros 5 registros para que observes cómo se ven los datos
+
+nom_arch <-'Estatal-Víctimas-2015-2024_oct2024.xlsx'
+
+# Con esta función cuento los días hasta el corte de los datos para obtener el promedio diario 
+dias_c <- dias_corte_sesnp(nom_arch)
+df <- read_excel( here( paste0('datos/datos-originales/', nom_arch, sep ='') ) )
+knitr::kable(head(df, 5))
+
+```
+
+# Procesamiento
+
+Debemos realizar una estandarización de los nombres de atributos o columnas, y ya que las cifras están por mes, en mi caso decidí agregar una sumatoria por año.
+
+```{r}
+
+# Pasamos a minúsculas las columnas y quitamos caractéres extraños
+df <- clean_names(df)
+names(df)
+
+# 1. Estandarizamos las claves geográficas para fomentar la interoperabilidad
+# 2. Calculamos por año los totales anuales
+
+df <- df %>% rename( anio = ano) %>%
+  mutate( anio = as.character(anio),
+          clave_ent = ifelse (str_length(clave_ent)  == 1, 
+                              paste0 ( '0' , clave_ent ) , 
+                              clave_ent), 
+          clave_ent = as.factor(clave_ent) ) %>%
+  mutate(anual = rowSums(select_if(., is.numeric), na.rm = TRUE)) 
+
+```
+
+# Femicidio
+
+Para calcular los conteos de Feminicidios y Homicidios y su suma (que llamaremos Femicidio) trababajamos con las variables `tipo_de_delito` y `subtipo_de_delito` en particular los tipos de delito **Feminicidio** y **Homicidio** y para diferenciar de aquellos homicidios que no fueron intencionales elegimos solamente los `dolosos`.
+
+```{r}
+# 3. Vamos a filtrar a las víctimas mujeres de los delitos y subtipos de delitos ya mencionados 
+
+df_femicidios <- df |> 
+     filter( tipo_de_delito %in% c('Feminicidio', 'Homicidio')   ,
+             subtipo_de_delito %in% c('Feminicidio', 'Homicidio doloso'),
+             sexo == 'Mujer') 
+```
+
+## Víctimas de femicidios registrados desde 2015 hasta Octubre de 2024 (SESNSP)
+
+```{r}
+# Redondeamos al entero más cercano, en este caso verás el año harcodeado que 
+# no es lo más adecuado, pero tú puedes obtenerno muy fácil con la 
+# función que te dejé en fun_aux.R
+
+df_femicidios |>
+    group_by( anio, tipo_de_delito) |>
+    summarise( femicidio  = sum(anual)) |>
+  pivot_wider(names_from = tipo_de_delito, values_from = femicidio ) |>
+  ungroup() |> clean_names() |>
+  mutate( femicidio = feminicidio + homicidio  ,
+          femi_dia  = ifelse( anio == 2024, 
+                        femicidio /dias_c, 
+                        femicidio /365 ),
+          femi_dia = round(femi_dia) ,
+          porc_fem =  (feminicidio /femicidio) * 100,
+          porc_fem = round(porc_fem, 2)  ) |> 
+  knitr::kable(caption = "Víctimas de Feminicidio y Homicidio doloso del SESNP (2015-2024) ")  
+```
+
+## Descripción de la tabla
+
+-   **anio:** Año de referencia
+-   **feminicidio:** Total de carpetas de investigación reportadas como feminicidio
+-   **homicidio:** Total de carpetas de investigación reportadas como homicidio doloso en el que la víctima fue mujer
+-   **femicidio:** suma de feminicidio y homicidio doloso de mujeres
+-   **femi_dia:** Promedio diario de femicidios
+-   **porc_fem:** Porcentaje de carpetas de investigación iniciadas como feminicidio respecto del total de los femicidios
